@@ -15,14 +15,22 @@
     td, th {
       padding: 10px;
     }
+    .selected-chip {
+      border: 1px solid black;
+    }
+    .keycontainer {
+      display: flex;
+    }
   </style>
 </head>
 
 <body>
+  <script>
+    let editor, data, checkMap = {}, valSelect = {}, tableEle, selectedIDs = new Set();
+  </script>
   <div id="editor" style="height:400px;border:1px solid black;"></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.36.1/min/vs/loader.min.js"></script>
   <script>
-    let editor, items;
     // require is provided by loader.min.js.
     require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.36.1/min/vs' } });
     require(["vs/editor/editor.main"], () => {
@@ -44,27 +52,120 @@
     }
 
     myWorker.onmessage = e => {
-      console.log('Worker: Message received from worker script', JSON.stringify(e.data));
-      items = e.data;
-      convert(items)
+      console.log('Worker: Message received from worker script', e.data);
+      data = e.data;
+      render(data)
     }
   </script>
-  <button onclick="postMessage()"> post message</button>
-  <div id="container"></div>
   <script>
 
     // Function to convert JSON data to HTML table
-    function convert(jsonData) {
+    function render({logs, keys, keyValues}) {
 
       // Get the container element where the table will be inserted
       let container = document.getElementById("container");
-
+      container.innerHTML = '';
+      if (keys && keyValues) {
+        container.appendChild(renderKeyCheck(keys))
+        container.appendChild(renderDropDowns(keyValues))
+      }
       // Create the table element
-      let table = document.createElement("table");
-
+      tableEle = document.createElement("table");
+      renderTable(tableEle, keys, logs)
       // Get the keys (column names) of the first object in the JSON data
-      let cols = Object.keys(jsonData[0]);
+      container.appendChild(tableEle) // Append the table to the container element
+    }
 
+    function renderKeyCheck(keys) {
+      const checkContainer = document.createElement('div');
+      checkContainer.className = 'checkbox-container';
+      checkMap = {};
+      keys.forEach(key => {
+        checkMap[key] = true;
+        const input = document.createElement('input');
+        const label = document.createElement('label');
+        input.type = 'checkbox';
+        input.checked = true;
+        label.textContent = key + ': ';
+        const inputID = `input-${key}`;
+        input.id = inputID;
+        label.htmlFor = inputID;
+        input.onchange = (e) => {
+          checkMap[key] = !checkMap[key];
+          const selectedKeys = Object.keys(checkMap).filter(k => checkMap[k]).map(k => k);
+          renderTable(tableEle, selectedKeys, data.logs);
+        }
+        checkContainer.appendChild(label)
+        checkContainer.appendChild(input)
+      });
+      return checkContainer;
+    }
+    function renderDropDowns(keyValues) {
+      const dropContainer = document.createElement('div');
+      dropContainer.className = 'dropdown-container';
+      keyValues.forEach(({key, values}) => {
+        const keyContainer = document.createElement('div');
+        const selectedContainer = document.createElement('div');
+        const select = document.createElement('select');
+        const label = document.createElement('label');
+        const selectID = `select-${key}`;
+        keyContainer.id = `con-${key}`;
+        keyContainer.className = `keycontainer`;
+        selectedContainer.id = `scd-${key}`;
+        select.id = selectID;
+        label.htmlFor = selectID;
+        label.textContent = key + ': ';
+        [{}, ...values].forEach(({value, vid}) => {
+          const option = document.createElement(('option'));
+          option.value = vid;
+          option.textContent = value;
+          select.appendChild(option);
+        });
+        const vidMap = values.reduce((ob, cu) => ({...ob, [cu.vid]: cu}), {});
+        select.onchange = (e) => {
+          filterLogs(vidMap[e.target.value].ids, []);
+          addSelected(key, vidMap[e.target.value], select, selectedContainer)
+        }
+        keyContainer.appendChild(label);
+        keyContainer.appendChild(select);
+        keyContainer.appendChild(selectedContainer);
+        dropContainer.appendChild(keyContainer);
+      });
+      return dropContainer;
+    }
+
+    function filterLogs(selected, removed) {
+      const selectedKeys = Object.keys(checkMap).filter(k => checkMap[k]).map(k => k);
+      if (selected.length > 0) {
+        selected.forEach(id => selectedIDs.add(id));
+      }
+      if (removed.length > 0) {
+        removed.forEach(id => selectedIDs.delete(id));
+      }
+
+      let filteredLogs = data.logs;
+      if (selectedIDs.size) {
+        filteredLogs = data.logs.filter(({id}) => selectedIDs.has(id));
+      }
+      renderTable(tableEle, selectedKeys, filteredLogs)
+    }
+
+    function addSelected(key, valueObj, select, selectedContainer) {
+      const selected = document.createElement('span');
+      selected.textContent = valueObj.value;
+      selected.id = `sel-${key}-${valueObj.value}`;
+      selected.className = 'selected-chip';
+      selected.onclick = e => {
+        selected.remove();
+        select.options[0].selected = true;
+        filterLogs([], valueObj.ids);
+      }
+      selectedContainer.appendChild(selected);
+    }
+
+    function renderTable(table, keys, logs) {
+      let cols = keys || Object.keys(logs[0].log);
+      table.innerHTML = '';
       // Create the header element
       let thead = document.createElement("thead");
       let tr = document.createElement("tr");
@@ -79,23 +180,24 @@
       table.append(tr) // Append the header to the table
 
       // Loop through the JSON data and create table rows
-      jsonData.forEach((item) => {
+      logs.forEach(({log: item}) => {
         let tr = document.createElement("tr");
 
         // Get the values of the current object in the JSON data
         let vals = Object.values(item);
 
         // Loop through the values and create table cells
-        vals.forEach((elem) => {
+        cols.forEach((elem) => {
           let td = document.createElement("td");
-          td.innerText = elem; // Set the value as the text of the table cell
+          td.innerText = item[elem]; // Set the value as the text of the table cell
           tr.appendChild(td); // Append the table cell to the table row
         });
         table.appendChild(tr); // Append the table row to the table
       });
-      container.appendChild(table) // Append the table to the container element
     }
   </script>
+  <button onclick="postMessage()"> post message</button>
+  <div id="container"></div>
 </body>
 
 </html>
