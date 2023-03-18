@@ -6,17 +6,27 @@
   <title>Monaco editor</title>
   <link rel="stylesheet" data-name="vs/editor/editor.main"
     href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.36.1/min/vs/editor/editor.main.min.css">
+
+  <style>
+    table, th, td {
+      border: 1px solid black;
+      border-collapse: collapse;
+    }
+    td, th {
+      padding: 10px;
+    }
+  </style>
 </head>
 
 <body>
-  <div id="container" style="height:400px;border:1px solid black;"></div>
+  <div id="editor" style="height:400px;border:1px solid black;"></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.36.1/min/vs/loader.min.js"></script>
   <script>
-    let editor;
+    let editor, items;
     // require is provided by loader.min.js.
     require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.36.1/min/vs' } });
     require(["vs/editor/editor.main"], () => {
-      editor = monaco.editor.create(document.getElementById('container'), {
+      editor = monaco.editor.create(document.getElementById('editor'), {
         value: `{"level":30,"time":1531171074631,"msg":"hello world","pid":657,"hostname":"Davids-MBP-3.fritz.box"}
 {"level":30,"time":1531171082399,"msg":"hello child!","pid":657,"hostname":"Davids-MBP-3.fritz.box","a":"property"}`,
         language: 'json',
@@ -25,22 +35,67 @@
           enabled: false
         }
       });
-      console.log(editor);
     });
   </script>
-
-  <!-- <script>
-    const myWorker = new Worker("worker.js");
-    myWorker.postMessage(editor.getValue())
-  </script> -->
   <script>
     const myWorker = new Worker("worker.js");
     function postMessage() {
       myWorker.postMessage({text: editor.getValue()})
     }
+
+    myWorker.onmessage = e => {
+      console.log('Worker: Message received from worker script', JSON.stringify(e.data));
+      items = e.data;
+      convert(items)
+    }
   </script>
   <button onclick="postMessage()"> post message</button>
+  <div id="container"></div>
+  <script>
 
+    // Function to convert JSON data to HTML table
+    function convert(jsonData) {
+
+      // Get the container element where the table will be inserted
+      let container = document.getElementById("container");
+
+      // Create the table element
+      let table = document.createElement("table");
+
+      // Get the keys (column names) of the first object in the JSON data
+      let cols = Object.keys(jsonData[0]);
+
+      // Create the header element
+      let thead = document.createElement("thead");
+      let tr = document.createElement("tr");
+
+      // Loop through the column names and create header cells
+      cols.forEach((item) => {
+        let th = document.createElement("th");
+        th.innerText = item; // Set the column name as the text of the header cell
+        tr.appendChild(th); // Append the header cell to the header row
+      });
+      thead.appendChild(tr); // Append the header row to the header
+      table.append(tr) // Append the header to the table
+
+      // Loop through the JSON data and create table rows
+      jsonData.forEach((item) => {
+        let tr = document.createElement("tr");
+
+        // Get the values of the current object in the JSON data
+        let vals = Object.values(item);
+
+        // Loop through the values and create table cells
+        vals.forEach((elem) => {
+          let td = document.createElement("td");
+          td.innerText = elem; // Set the value as the text of the table cell
+          tr.appendChild(td); // Append the table cell to the table row
+        });
+        table.appendChild(tr); // Append the table row to the table
+      });
+      container.appendChild(table) // Append the table to the container element
+    }
+  </script>
 </body>
 
 </html>
