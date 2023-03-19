@@ -21,12 +21,19 @@
     .keycontainer {
       display: flex;
     }
+    .checkbox-container {
+      display: flex;
+    }
+
+    .dropdown-container {
+      display: grid;
+    }
   </style>
 </head>
 
 <body>
   <script>
-    let editor, data, checkMap = {}, valSelect = {}, tableEle, selectedIDs = new Set();
+    let editor, data, checkMap = {}, valSelect = {}, tableEle, selectedIDs = new Set(), filteredLogs;
   </script>
   <div id="editor" style="height:400px;border:1px solid black;"></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.36.1/min/vs/loader.min.js"></script>
@@ -35,8 +42,7 @@
     require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.36.1/min/vs' } });
     require(["vs/editor/editor.main"], () => {
       editor = monaco.editor.create(document.getElementById('editor'), {
-        value: `{"level":30,"time":1531171074631,"msg":"hello world","pid":657,"hostname":"Davids-MBP-3.fritz.box"}
-{"level":30,"time":1531171082399,"msg":"hello child!","pid":657,"hostname":"Davids-MBP-3.fritz.box","a":"property"}`,
+        value: ``,
         language: 'json',
         theme: 'vs-dark',
         minimap: {
@@ -84,6 +90,8 @@
         checkMap[key] = true;
         const input = document.createElement('input');
         const label = document.createElement('label');
+        const checkKey = document.createElement('div');
+        checkKey.className = 'selected-chip';
         input.type = 'checkbox';
         input.checked = true;
         label.textContent = key + ': ';
@@ -93,10 +101,11 @@
         input.onchange = (e) => {
           checkMap[key] = !checkMap[key];
           const selectedKeys = Object.keys(checkMap).filter(k => checkMap[k]).map(k => k);
-          renderTable(tableEle, selectedKeys, data.logs);
+          renderTable(tableEle, selectedKeys, filteredLogs || data.logs);
         }
-        checkContainer.appendChild(label)
-        checkContainer.appendChild(input)
+        checkKey.appendChild(label)
+        checkKey.appendChild(input)
+        checkContainer.appendChild(checkKey)
       });
       return checkContainer;
     }
@@ -123,6 +132,7 @@
         });
         const vidMap = values.reduce((ob, cu) => ({...ob, [cu.vid]: cu}), {});
         select.onchange = (e) => {
+          if (!vidMap[e.target.value]) return;
           filterLogs(vidMap[e.target.value].ids, []);
           addSelected(key, vidMap[e.target.value], select, selectedContainer)
         }
@@ -143,7 +153,7 @@
         removed.forEach(id => selectedIDs.delete(id));
       }
 
-      let filteredLogs = data.logs;
+      filteredLogs = data.logs;
       if (selectedIDs.size) {
         filteredLogs = data.logs.filter(({id}) => selectedIDs.has(id));
       }
@@ -164,11 +174,11 @@
     }
 
     function renderTable(table, keys, logs) {
-      let cols = keys || Object.keys(logs[0].log);
+      const cols = keys || Object.keys(logs[0].log);
       table.innerHTML = '';
       // Create the header element
-      let thead = document.createElement("thead");
-      let tr = document.createElement("tr");
+      const thead = document.createElement("thead");
+      const tr = document.createElement("tr");
 
       // Loop through the column names and create header cells
       cols.forEach((item) => {
@@ -181,11 +191,7 @@
 
       // Loop through the JSON data and create table rows
       logs.forEach(({log: item}) => {
-        let tr = document.createElement("tr");
-
-        // Get the values of the current object in the JSON data
-        let vals = Object.values(item);
-
+        const tr = document.createElement("tr");
         // Loop through the values and create table cells
         cols.forEach((elem) => {
           let td = document.createElement("td");
@@ -196,7 +202,7 @@
       });
     }
   </script>
-  <button onclick="postMessage()"> post message</button>
+  <button onclick="postMessage()">Compile logs</button>
   <div id="container"></div>
 </body>
 
