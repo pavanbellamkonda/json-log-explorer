@@ -1,14 +1,18 @@
 onmessage = function(e) {
-    extractData(e.data.text)
+    console.log(e.data)
+    if (e.data.type === 'extract') extractData(e.data.text);
+    if (e.data.type === 'search') searchLogs(e.data);
+    if (e.data.type === 'highlight') highlightSearch(e.data);
 }
 
 /**
  * @param {string} fullText
  */
 function extractData(fullText) {
+    if (!fullText) return;
     const jsonText = splitJSON((fullText));
     const { success, fail } = parseJSON(jsonText);
-    const posted = {logs: success, failed: fail.join('\n')};
+    const posted = {logs: success, failed: fail.join('\n'), type: 'extract'};
     postMessage(posted);
     const {keys, keyValues} = extractKeysAndUniq(success);
     posted.keys = keys;
@@ -16,6 +20,39 @@ function extractData(fullText) {
     postMessage(posted);
 }
 
+function searchLogs(data) {
+    const {searchText, options} = data;
+    if (!searchText || !options) return;
+    data.filteredIDs = [];
+    const filtered =  options.filter(option => {
+        if (String(option.value).includes(searchText)) {
+            data.filteredIDs.push(...option.ids);
+            return true;
+        }
+    });
+    const filteredIDMap = data.filteredIDs.reduce((ac, cu) => ({...ac, [cu]: true}), {});
+    data.filtered = filtered;
+    data.filteredLogs = data.filteredLogs.filter(log => filteredIDMap[log.id]);
+    return postMessage(data);
+}
+
+
+function highlightSearch(data) {
+    let {filteredLogs, searchTexts} = data;
+    if (!filteredLogs || !searchTexts) return;
+    Object.keys(searchTexts).forEach(key => {
+        if (searchTexts[key] && searchTexts[key].length > 0) {
+            searchTexts[key].forEach(text => {
+                filteredLogs = data.filteredLogs;
+                data.filteredLogs = filteredLogs.map(log => {
+                    log.log[key] = String(log.log[key]).replaceAll(text, `<span style="background-color:yellow;">${text}</span>`)
+                    return log;
+                })
+            })
+        }
+    })
+    postMessage(data);
+}
 /**
  * @param {any[]} logs
  */

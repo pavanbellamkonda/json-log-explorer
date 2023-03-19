@@ -33,7 +33,8 @@
 
 <body>
   <script>
-    let editor, data, checkMap = {}, valSelect = {}, tableEle, selectedIDs = new Set(), filteredLogs;
+    let editor, data, checkMap = {}, valSelect = {}, tableEle, selectedIDs = {}, searchEles = {};
+    let filteredLogs, searchTexts = {};
   </script>
   <div id="editor" style="height:400px;border:1px solid black;"></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.36.1/min/vs/loader.min.js"></script>
@@ -54,13 +55,23 @@
   <script>
     const myWorker = new Worker("worker.js");
     function postMessage() {
-      myWorker.postMessage({text: editor.getValue()})
+      myWorker.postMessage({type: 'extract', text: editor.getValue()})
     }
 
     myWorker.onmessage = e => {
       console.log('Worker: Message received from worker script', e.data);
-      data = e.data;
-      render(data)
+      if (e.data.type === 'extract') {
+        data = e.data;
+        render(data)
+      }
+      if (e.data.type === 'search') {
+        renderSearch(e.data)
+      }
+      if (e.data.type === 'highlight') {
+        const selectedKeys = Object.keys(checkMap).filter(k => checkMap[k]).map(k => k);
+        filteredLogs = e.data.filteredLogs
+        renderTable(tableEle, selectedKeys, filteredLogs);
+      }
     }
   </script>
   <script>
@@ -70,10 +81,16 @@
 
       // Get the container element where the table will be inserted
       let container = document.getElementById("container");
+      searchTexts = {};
+      selectedIDs = {};
       container.innerHTML = '';
       if (keys && keyValues) {
         container.appendChild(renderKeyCheck(keys))
         container.appendChild(renderDropDowns(keyValues))
+        keys.forEach(key => {
+          searchTexts[key] = new Set();
+          selectedIDs[key] =  new Set();
+        })
       }
       // Create the table element
       tableEle = document.createElement("table");
@@ -117,8 +134,10 @@
         const selectedContainer = document.createElement('div');
         const select = document.createElement('select');
         const label = document.createElement('label');
+        const input = document.createElement('input');
         const selectID = `select-${key}`;
         keyContainer.id = `con-${key}`;
+        input.id = `input-${key}`;
         keyContainer.className = `keycontainer`;
         selectedContainer.id = `scd-${key}`;
         select.id = selectID;
@@ -133,31 +152,66 @@
         const vidMap = values.reduce((ob, cu) => ({...ob, [cu.vid]: cu}), {});
         select.onchange = (e) => {
           if (!vidMap[e.target.value]) return;
-          filterLogs(vidMap[e.target.value].ids, []);
+          filterLogs(key, vidMap[e.target.value].ids, []);
           addSelected(key, vidMap[e.target.value], select, selectedContainer)
+        }
+        input.onkeyup = (e) => {
+          if (e.key === 'Enter') {
+            if (!e.target.value) return;
+            searchTexts[key].add(e.target.value);
+            myWorker.postMessage({type: 'search', searchText: e.target.value, filteredLogs: filteredLogs || data.logs, options: values, key });
+            searchEles.selectedContainer = selectedContainer;
+            searchEles.select = select;
+          }
         }
         keyContainer.appendChild(label);
         keyContainer.appendChild(select);
+        keyContainer.appendChild(input);
         keyContainer.appendChild(selectedContainer);
         dropContainer.appendChild(keyContainer);
       });
       return dropContainer;
     }
 
-    function filterLogs(selected, removed) {
-      const selectedKeys = Object.keys(checkMap).filter(k => checkMap[k]).map(k => k);
-      if (selected.length > 0) {
-        selected.forEach(id => selectedIDs.add(id));
+    function renderSearch(data) {
+      const {key, searchText} = data;
+      const selected = document.createElement('span');
+      selected.textContent = searchText;
+      selected.id = `sel-${key}-${searchText}`;
+      selected.className = 'selected-chip';
+      filterLogs(key, data.filteredIDs, []);
+      selected.onclick = e => {
+        selected.remove();
+        searchEles.selectedContainer.innerHTML = '';
+        searchEles.select.options[0].selected = true;
+        searchTexts[key].delete(searchText);
+        filterLogs(key, [], data.filteredIDs);
       }
+      searchEles.selectedContainer.appendChild(selected);
+    }
+    function filterLogs(key, selected, removed) {
+      const selectedKeys = Object.keys(checkMap).filter(k => checkMap[k]).map(k => k);
       if (removed.length > 0) {
-        removed.forEach(id => selectedIDs.delete(id));
+        removed.forEach(id => selectedIDs[key].delete(id));
+      }
+      if (selected.length > 0) {
+        selected.forEach(id => selectedIDs[key].add(id));
       }
 
+      const filterIDs = new Set(Object.values(selectedIDs).map(set => Array.from(set)).flat())
       filteredLogs = data.logs;
-      if (selectedIDs.size) {
-        filteredLogs = data.logs.filter(({id}) => selectedIDs.has(id));
+      if (filterIDs.size) {
+        filteredLogs = data.logs.filter(({id}) => filterIDs.has(id));
       }
+      highlightSearch()
       renderTable(tableEle, selectedKeys, filteredLogs)
+    }
+
+    function highlightSearch() {
+      const searchTextsObj = Object.keys(searchTexts).reduce((ob, key) => {
+        return {...ob, [key]: Array.from(searchTexts[key])}
+      }, {});
+      myWorker.postMessage({type: 'highlight', filteredLogs, searchTexts: searchTextsObj})
     }
 
     function addSelected(key, valueObj, select, selectedContainer) {
@@ -168,7 +222,8 @@
       selected.onclick = e => {
         selected.remove();
         select.options[0].selected = true;
-        filterLogs([], valueObj.ids);
+        selectedContainer.innerHTML = '';
+        filterLogs(key, [], valueObj.ids);
       }
       selectedContainer.appendChild(selected);
     }
@@ -195,7 +250,9 @@
         // Loop through the values and create table cells
         cols.forEach((elem) => {
           let td = document.createElement("td");
-          td.innerText = item[elem]; // Set the value as the text of the table cell
+          const text = document.createElement('p');
+          text.innerHTML = item[elem];
+          td.appendChild(text)
           tr.appendChild(td); // Append the table cell to the table row
         });
         table.appendChild(tr); // Append the table row to the table
