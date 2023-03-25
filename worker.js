@@ -25,7 +25,7 @@ function searchLogs(data) {
     if (!searchText || !options) return;
     data.filteredIDs = [];
     const filtered =  options.filter(option => {
-        if (String(option.value).includes(searchText)) {
+        if (String(option.value).toLowerCase().includes(String(searchText).toLowerCase())) {
             data.filteredIDs.push(...option.ids);
             return true;
         }
@@ -45,7 +45,10 @@ function highlightSearch(data) {
             searchTexts[key].forEach(text => {
                 filteredLogs = data.filteredLogs;
                 data.filteredLogs = filteredLogs.map(log => {
-                    log.log[key] = String(log.log[key]).replaceAll(text, `<span style="background-color:yellow;">${text}</span>`)
+                    const logText = String(log.log[key]), searchText = String(text);
+                    const matchIndex = logText.toLowerCase().indexOf(searchText.toLowerCase());
+                    const matchText = logText.slice(matchIndex, matchIndex + searchText.length)
+                    log.log[key] = logText.replace(matchText, `<span style="background-color:yellow;">${matchText}</span>`)
                     return log;
                 })
             })
